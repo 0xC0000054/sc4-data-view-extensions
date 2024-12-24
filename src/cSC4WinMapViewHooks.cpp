@@ -38,6 +38,7 @@ namespace
 	static const uint32_t DataViewType_Moisture = 29;
 	static const uint32_t DataViewType_ParkAura = 12;
 	static const uint32_t DataViewType_LandmarkAura = 13;
+	static const uint32_t DataViewType_TransientAura = 14;
 	static const uint32_t DataViewType_TrafficVolume = 76;
 
 	static const uint32_t MoistureButtonID1 = 0x5012;
@@ -117,8 +118,21 @@ namespace
 
 	static const uintptr_t Update_DataTypeSwitch_CaseDefault_Continue = 0x7A4375;
 	static const uintptr_t Update_DataTypeSwitch_Continue = 0x7A30B3;
-	static const uintptr_t Update_DataViewTypeLandmark_Continue = 0x7A331D;
+	static const uintptr_t Update_Sint8Grid_Continue = 0x7A3240;
+	static const uintptr_t Update_Sint16Grid_Continue = 0x7A331D;
 	static const uintptr_t Update_NullPointer_Continue = 0x7A487C;
+
+	cISC4SimGrid<int8_t>* GetTransientAuraGrid()
+	{
+		cISC4SimGrid<int8_t>* transientAuraGrid = nullptr;
+
+		if (spAura)
+		{
+			transientAuraGrid = spAura->GetTransientAuraGrid();
+		}
+
+		return transientAuraGrid;
+	}
 
 	cISC4SimGrid<int16_t>* GetLandmarkMap()
 	{
@@ -138,6 +152,8 @@ namespace
 		{
 			cmp eax, DataViewType_LandmarkAura
 			jz updateLandmarkDataView
+			cmp eax, DataViewType_TransientAura
+			jz updateTransientAuraDataView
 			cmp eax, DataViewType_TrafficVolume
 			ja dataTypeDefaultSwitchCase
 			jmp Update_DataTypeSwitch_Continue
@@ -149,7 +165,13 @@ namespace
 			call GetLandmarkMap // (cdecl)
 			test eax, eax
 			jz nullPointer
-			jmp Update_DataViewTypeLandmark_Continue
+			jmp Update_Sint16Grid_Continue
+
+			updateTransientAuraDataView:
+			call GetTransientAuraGrid // (cdecl)
+			test eax, eax
+			jz nullPointer
+			jmp Update_Sint8Grid_Continue
 
 			nullPointer:
 			jmp Update_NullPointer_Continue
