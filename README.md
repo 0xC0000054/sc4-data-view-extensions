@@ -1,4 +1,4 @@
-# sc4-network-texture-test
+# sc4-data-view-extensions
 
 A DLL Plugin for SimCity 4 that extends the game's data views.
 
@@ -14,7 +14,6 @@ The plugin may work on Windows 7 or later, but I do not have the ability to test
 1. Close SimCity 4.
 2. Copy `SC4DataViewExtensions.dll` and `ExtendedDataViewUI.dat` into the top-level of the Plugins folder in the SimCity 4 installation directory or Documents/SimCity 4 directory.
 3. Start SimCity 4.
-
 
 ## Troubleshooting
 
