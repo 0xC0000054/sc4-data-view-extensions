@@ -16,6 +16,12 @@ This mod adds a new radio button instead of replacing the Garbage Pollution data
 The highlighted items on the Park Aura (and Landmark Aura) views are Parks/Landmarks
 instead of Garbage facilities.
 
+## References
+
+See [That Unused Moisture Data](https://community.simtropolis.com/forums/topic/70765-that-unused-moisture-data-view/) View for a description of how the moisture data view works.    
+See [Cori's Park Aura](https://community.simtropolis.com/files/file/33412-coris-parks-aura/) mod page
+for a description of how the park aura data view works.
+
 ## Maxis Transit Switch Highlight Mode
 
 This data view highlight mode uses the value 9, but Maxis didn't document it in Ingred.ini.
@@ -72,6 +78,11 @@ See [LICENSE.txt](LICENSE.txt) for more information.
 [gzcom-dll](https://github.com/nsgomez/gzcom-dll/tree/master) Located in the vendor folder, MIT License.    
 [Windows Implementation Library](https://github.com/microsoft/wil) - MIT License    
 [SC4Fix](https://github.com/nsgomez/sc4fix) - MIT License    
+
+## Mod Credits
+
+The Moisture view data panel is based on [Cori's Moisture Data View](https://community.simtropolis.com/files/file/31154-coris-dataview-moisture/).    
+The Parks Aura, Landmarks Aura and Transient Aura data panels are based on the [Cori's Parks Aura Data View](https://community.simtropolis.com/files/file/33412-coris-parks-aura/). 
 
 # Source Code
 
