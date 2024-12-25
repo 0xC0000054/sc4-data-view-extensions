@@ -29,7 +29,7 @@ The DLL adds the following new data sources. The Data Source Property Value item
 to the numeric value of the game's "DataView: Data source" property (0x4A0B47E5).
 
 | Name | Data Source Property Value | Description |
-|-------------------------------------------------|
+|------|----------------------------|-------------|
 | Landmark Aura | 13 | A data source using the game's landmark aura data. |
 | Transient Aura | 14 | A data source using the game's transient aura data. |
 
@@ -39,7 +39,7 @@ The DLL adds the following new highlight modes. The Highlight Mode Property Valu
 to the numeric value of the game's "DataView: Highlight mode" property (0x4A0B47E9).
 
 | Name | Highlight Mode Property Value | Description |
-|----------------------------------------------------|
+|------|-------------------------------|-------------|
 | Park | 10 | Buildings that have a Park Effect exemplar property are highlighted. |
 | Landmark | 11 | Buildings that have a Landmark Effect exemplar property are highlighted. |
 
