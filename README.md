@@ -18,7 +18,7 @@ instead of Garbage facilities.
 
 ## References
 
-See [That Unused Moisture Data](https://community.simtropolis.com/forums/topic/70765-that-unused-moisture-data-view/) View for a description of how the moisture data view works.    
+See [That Unused Moisture Data View](https://community.simtropolis.com/forums/topic/70765-that-unused-moisture-data-view/) for a description of how the moisture data view works.    
 See [Cori's Park Aura](https://community.simtropolis.com/files/file/33412-coris-parks-aura/) mod page
 for a description of how the park aura data view works.
 
