@@ -54,7 +54,8 @@ The plugin may work on Windows 7 or later, but I do not have the ability to test
 
 1. Close SimCity 4.
 2. Copy `SC4DataViewExtensions.dll` and `ExtendedDataViewUI.dat` into the top-level of the Plugins folder in the SimCity 4 installation directory or Documents/SimCity 4 directory.
-3. Start SimCity 4.
+3. Optionally copy `z_DataView - TransientAura.dat` into the Plugins folder in the SimCity 4 installation directory or Documents/SimCity 4 directory.
+4. Start SimCity 4.
 
 # Troubleshooting
 
