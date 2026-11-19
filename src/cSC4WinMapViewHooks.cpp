@@ -19,7 +19,9 @@
 #include "GlobalPointers.h"
 #include "DataViewHighlightManager.h"
 #include "Patcher.h"
+#include "cRZBaseString.h"
 #include <array>
+#include <cstdio>
 
 namespace
 {
@@ -41,20 +43,165 @@ namespace
 	static const uint32_t DataViewType_TransientAura = 14;
 	static const uint32_t DataViewType_TrafficVolume = 76;
 
-	static const uint32_t MoistureButtonID1 = 0x5012;
-	static const uint32_t MoistureButtonID2 = 0x5112;
-	static const uint32_t ParkAuraButtonID1 = 0x5013;
-	static const uint32_t ParkAuraButtonID2 = 0x5113;
-	static const uint32_t LandmarkAuraButtonID1 = 0x5014;
-	static const uint32_t LandmarkAuraButtonID2 = 0x5114;
-
-	static constexpr std::array<uint32_t, 6> NewNotificationTargets =
+	// The radio buttons the DLL adds to the Data Views panel and the view mode each selects (the game shows the data
+	// view exemplar 0x4A0B6800 + view mode). ID2 is the alternate button below the grid, as for the Maxis buttons.
+	struct ExtraDataViewButton
 	{
-		MoistureButtonID1, MoistureButtonID2, ParkAuraButtonID1,
-		ParkAuraButtonID2, LandmarkAuraButtonID1, LandmarkAuraButtonID2,
+		uint32_t id1;
+		uint32_t id2;
+		uint32_t viewMode;
 	};
 
+	static constexpr std::array<ExtraDataViewButton, 4> ExtraDataViewButtons =
+	{{
+		{ 0x5012, 0x5112, DataViewType_Moisture },
+		{ 0x5013, 0x5113, DataViewType_ParkAura },
+		{ 0x5014, 0x5114, DataViewType_LandmarkAura },
+		{ 0x5015, 0x5115, DataViewType_TransientAura },
+	}};
+
+	// Radio buttons 0x5001 up to this one are checked and unchecked as one group (the game uses 0x11).
+	static constexpr uint32_t RadioButtonCount = 0x15;
+
+	// Pages of the Data Views panel (ExtendedDataViewUI.dat). Row 0 of the button grid is the same on every page; rows
+	// 1-4 are the page containers PageContainerBase + page (1, 2, ...), one shown at a time. Previous, next and the
+	// page number sit in the last cell of row 0.
+	static const uint32_t ButtonGridID = 0x8A2871D6;
+	static const uint32_t PageContainerBase = 0x5C4DF100;
+	static const uint32_t PreviousPageButtonID = 0x5C4DF1F0;
+	static const uint32_t NextPageButtonID = 0x5C4DF1F1;
+	static const uint32_t PageLabelID = 0x5C4DF1F2;
+	static const uint32_t MaxPages = 16;
+
+	static constexpr std::array<uint32_t, 2> PageButtons = { PreviousPageButtonID, NextPageButtonID };
+
+	uint32_t currentPage = 1;
+
 	DataViewHighlightManager occupantHighlightManager;
+
+	uint32_t CountPages(cIGZWin* grid)
+	{
+		uint32_t pages = 0;
+
+		while (pages < MaxPages && grid->GetChildWindowFromID(PageContainerBase + pages + 1))
+		{
+			pages++;
+		}
+
+		return pages;
+	}
+
+	void ShowPage(cIGZWin* panel, uint32_t page)
+	{
+		if (!panel)
+		{
+			return;
+		}
+
+		cIGZWin* grid = panel->GetChildWindowFromIDRecursive(ButtonGridID);
+
+		if (!grid)
+		{
+			return;
+		}
+
+		const uint32_t pages = CountPages(grid);
+
+		if (pages == 0)
+		{
+			return; // A data view UI without pages (the Maxis UI or an older ExtendedDataViewUI.dat).
+		}
+
+		if (page < 1 || page > pages)
+		{
+			page = 1;
+		}
+
+		currentPage = page;
+
+		for (uint32_t i = 1; i <= pages; i++)
+		{
+			cIGZWin* container = grid->GetChildWindowFromID(PageContainerBase + i);
+
+			if (i == page)
+			{
+				container->ShowWindow();
+			}
+			else
+			{
+				container->HideWindow();
+			}
+		}
+
+		const uint32_t navigationIDs[] = { PreviousPageButtonID, NextPageButtonID, PageLabelID };
+
+		for (const uint32_t id : navigationIDs)
+		{
+			cIGZWin* window = grid->GetChildWindowFromID(id);
+
+			if (window)
+			{
+				if (pages > 1)
+				{
+					window->ShowWindow();
+				}
+				else
+				{
+					window->HideWindow();
+				}
+			}
+		}
+
+		cIGZWin* label = grid->GetChildWindowFromID(PageLabelID);
+
+		if (label)
+		{
+			char text[32]{};
+			std::snprintf(text, sizeof(text), "%u / %u", page, pages);
+			label->SetCaption(cRZBaseString(text));
+		}
+	}
+
+	// Called from DoMessageHook with the clicked button ID and the ESI register of the map view's DoMessage (the
+	// map view is at ESI - 8, its Data Views panel at [ESI + 0x48]). Returns true when the click was handled.
+	bool HandleCustomButtonClick(uint32_t buttonID, uint8_t* esi)
+	{
+		if (buttonID == PreviousPageButtonID || buttonID == NextPageButtonID)
+		{
+			cIGZWin* panel = *reinterpret_cast<cIGZWin**>(esi + 0x48);
+			cIGZWin* grid = panel ? panel->GetChildWindowFromIDRecursive(ButtonGridID) : nullptr;
+			const uint32_t pages = grid ? CountPages(grid) : 0;
+
+			if (pages > 1)
+			{
+				uint32_t page = currentPage;
+
+				if (buttonID == NextPageButtonID)
+				{
+					page = page >= pages ? 1 : page + 1;
+				}
+				else
+				{
+					page = page <= 1 ? pages : page - 1;
+				}
+
+				ShowPage(panel, page);
+			}
+
+			return true;
+		}
+
+		for (const ExtraDataViewButton& button : ExtraDataViewButtons)
+		{
+			if (buttonID == button.id1 || buttonID == button.id2)
+			{
+				OnViewModeButtonSelected(esi - 8, button.id1, button.viewMode);
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	static const uintptr_t DoMessage_HandledRadioButton_Continue = 0x7A592B;
 	static const uintptr_t DoMessage_UnhandledRadioButton_Continue = 0x7A571B;
@@ -66,52 +213,19 @@ namespace
 			push eax
 			push ecx
 			push edx
-			cmp eax, MoistureButtonID1
-			jz moistureRadioButtonClick
-			cmp eax, MoistureButtonID2
-			jz moistureRadioButtonClick
-			cmp eax, ParkAuraButtonID1
-			jz parkRadioButtonClick
-			cmp eax, ParkAuraButtonID2
-			jz parkRadioButtonClick
-			cmp eax, LandmarkAuraButtonID1
-			jz landmarkRadioButtonClick
-			cmp eax, LandmarkAuraButtonID2
-			jz landmarkRadioButtonClick
+			push esi
+			push eax
+			call HandleCustomButtonClick // (cdecl)
+			add esp, 8
+			test al, al
 			pop edx
 			pop ecx
 			pop eax
+			jnz handled
 			cmp eax, 0x5101
 			jmp DoMessage_UnhandledRadioButton_Continue
 
-			moistureRadioButtonClick:
-			push DataViewType_Moisture
-			push MoistureButtonID1
-			lea ecx, [esi + -8]
-			call OnViewModeButtonSelected // (thiscall)
-			pop edx
-			pop ecx
-			pop eax
-			jmp DoMessage_HandledRadioButton_Continue
-
-			parkRadioButtonClick:
-			push DataViewType_ParkAura
-			push ParkAuraButtonID1
-			lea ecx, [esi + -8]
-			call OnViewModeButtonSelected // (thiscall)
-			pop edx
-			pop ecx
-			pop eax
-			jmp DoMessage_HandledRadioButton_Continue
-
-			landmarkRadioButtonClick:
-			push DataViewType_LandmarkAura
-			push LandmarkAuraButtonID1
-			lea ecx, [esi + -8]
-			call OnViewModeButtonSelected // (thiscall)
-			pop edx
-			pop ecx
-			pop eax
+			handled:
 			jmp DoMessage_HandledRadioButton_Continue
 		}
 	}
@@ -178,22 +292,35 @@ namespace
 		}
 	}
 
+	void SetNotificationTarget(cIGZWin* parent, cIGZWin* target, uint32_t buttonID)
+	{
+		cIGZWin* child = parent->GetChildWindowFromIDRecursive(buttonID);
+
+		if (child)
+		{
+			child->SetNotificationTarget(target);
+		}
+	}
+
 	void RegisterCustomRadioButtonNotifications(cIGZWin* parent, cIGZUnknown* mapView)
 	{
 		cRZAutoRefCount<cIGZWin> pTargetWin;
 
 		if (mapView->QueryInterface(GZIID_cIGZWin, pTargetWin.AsPPVoid()))
 		{
-			for (const uint32_t& buttonID : NewNotificationTargets)
+			for (const ExtraDataViewButton& button : ExtraDataViewButtons)
 			{
-				cIGZWin* child = parent->GetChildWindowFromIDRecursive(buttonID);
+				SetNotificationTarget(parent, pTargetWin, button.id1);
+				SetNotificationTarget(parent, pTargetWin, button.id2);
+			}
 
-				if (child)
-				{
-					child->SetNotificationTarget(pTargetWin);
-				}
+			for (const uint32_t& buttonID : PageButtons)
+			{
+				SetNotificationTarget(parent, pTargetWin, buttonID);
 			}
 		}
+
+		ShowPage(parent, currentPage);
 	}
 
 	static const uintptr_t ShowWindow_Continue = 0x7A62E0;
@@ -287,8 +414,11 @@ namespace
 
 	void InstallMaxRadioButtonIDPatch()
 	{
-		// Change the original value 0x11 to 0x14
-		Patcher::OverwriteMemoryUint32(0x7A0F3D, 0x14);
+		// Change the original value 0x11 in the three calls that check one radio button and uncheck the others
+		// (OnViewModeButtonSelected and the Desirability and Traffic buttons, which select their last sub view).
+		Patcher::OverwriteMemoryUint32(0x7A0F3D, RadioButtonCount);
+		Patcher::OverwriteMemoryUint32(0x7A57DF, RadioButtonCount);
+		Patcher::OverwriteMemoryUint32(0x7A5879, RadioButtonCount);
 	}
 
 	void InstallSetDataViewHooks()
