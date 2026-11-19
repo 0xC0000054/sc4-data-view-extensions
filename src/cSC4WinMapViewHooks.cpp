@@ -20,8 +20,18 @@
 #include "DataViewHighlightManager.h"
 #include "Patcher.h"
 #include "cRZBaseString.h"
+#include "cGZPersistResourceKey.h"
+#include "cIGZPersistResourceManager.h"
+#include "cIGZVariant.h"
+#include "cISCProperty.h"
+#include "cISCPropertyHolder.h"
+#include "cISCResExemplar.h"
+#include "GZServPtrs.h"
+#include "Logger.h"
+#include <algorithm>
 #include <array>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -43,16 +53,16 @@ namespace
 	static const uint32_t DataViewType_TransientAura = 14;
 	static const uint32_t DataViewType_TrafficVolume = 76;
 
-	// The radio buttons the DLL adds to the Data Views panel and the view mode each selects (the game shows the data
-	// view exemplar 0x4A0B6800 + view mode). ID2 is the alternate button below the grid, as for the Maxis buttons.
-	struct ExtraDataViewButton
+	// Buttons of the 1.0 ExtendedDataViewUI.dat and the view mode each selects (the game shows the data view exemplar
+	// 0x4A0B6800 + view mode). ID2 is the alternate button below the grid, as for the Maxis buttons.
+	struct LegacyDataViewButton
 	{
 		uint32_t id1;
 		uint32_t id2;
 		uint32_t viewMode;
 	};
 
-	static constexpr std::array<ExtraDataViewButton, 4> ExtraDataViewButtons =
+	static constexpr std::array<LegacyDataViewButton, 4> LegacyDataViewButtons =
 	{{
 		{ 0x5012, 0x5112, DataViewType_Moisture },
 		{ 0x5013, 0x5113, DataViewType_ParkAura },
@@ -60,76 +70,299 @@ namespace
 		{ 0x5015, 0x5115, DataViewType_TransientAura },
 	}};
 
-	// Radio buttons 0x5001 up to this one are checked and unchecked as one group (the game uses 0x11).
-	static constexpr uint32_t RadioButtonCount = 0x15;
+	// Data View Button Cell: the data views with this property in their exemplar (type 0x6534284A, group 0x690F693F,
+	// instance 0x4A0B6800 + view mode) get a button in the Data Views panel, in that cell. The Maxis data views use
+	// the Maxis buttons, every other one the button CustomButtonBase + view mode, which must be in the UI
+	// (ExtendedDataViewUI.dat): buttons created at run time do not receive clicks.
+	static const uint32_t ExemplarType = 0x6534284A;
+	static const uint32_t DataViewGroup = 0x690F693F;
+	static const uint32_t DataViewInstanceBase = 0x4A0B6800;
+	static const uint32_t PropDataViewButtonCell = 0x5C4DF150;
+	static const uint32_t CustomButtonBase = 0x5200;
+	static const uint32_t MaxViewMode = 0xFF;
 
-	// Pages of the Data Views panel (ExtendedDataViewUI.dat). Row 0 of the button grid is the same on every page; rows
-	// 1-4 are the page containers PageContainerBase + page (1, 2, ...), one shown at a time. Previous, next and the
-	// page number sit in the last cell of row 0.
+	struct MaxisDataViewButton
+	{
+		uint32_t viewMode;
+		uint32_t buttonID;
+	};
+
+	// The view mode of each Maxis button, from the button switch of cSC4WinMapView::DoMessage (0x7A5716). Desirability
+	// and Traffic open their sub views; their cell comes from the R$ Desirability and Traffic data views.
+	static constexpr std::array<MaxisDataViewButton, 16> MaxisDataViewButtons =
+	{{
+		{ 0x05, 0x5002 }, { 0x03, 0x5003 }, { 0x1B, 0x5004 }, { 0x28, 0x5005 },
+		{ 0x0A, 0x5006 }, { 0x07, 0x5007 }, { 0x09, 0x5008 }, { 0x20, 0x5009 },
+		{ 0x02, 0x500A }, { 0x01, 0x500B }, { 0x1E, 0x500C }, { 0x1C, 0x500D },
+		{ 0x08, 0x500E }, { 0x18, 0x500F }, { 0x19, 0x5010 }, { 0x1A, 0x5011 },
+	}};
+
+	// Radio buttons 0x5001 up to 0x5000 + this count are checked and unchecked as one group (the game uses 0x11).
+	static constexpr uint32_t RadioButtonCount = CustomButtonBase + MaxViewMode - 0x5000;
+
+	// The button grid (4 columns of the Maxis cells, 5 rows of 18 pixels). Row 0 holds All Off and the page controls
+	// on every page; cell row r is grid row r % 4 + 1 of page r / 4 + 1.
 	static const uint32_t ButtonGridID = 0x8A2871D6;
-	static const uint32_t PageContainerBase = 0x5C4DF100;
 	static const uint32_t PreviousPageButtonID = 0x5C4DF1F0;
 	static const uint32_t NextPageButtonID = 0x5C4DF1F1;
 	static const uint32_t PageLabelID = 0x5C4DF1F2;
-	static const uint32_t MaxPages = 16;
+	static const int32_t GridColumns = 4;
+	static const int32_t PageRows = 4;
+	static const int32_t MaxPages = 16;
+	static const int32_t RowHeight = 18;
+	static constexpr int32_t ColumnLeft[GridColumns] = { 4, 128, 212, 356 };
+	static constexpr int32_t ColumnRight[GridColumns] = { 124, 212, 352, 502 };
 
 	static constexpr std::array<uint32_t, 2> PageButtons = { PreviousPageButtonID, NextPageButtonID };
 
-	uint32_t currentPage = 1;
+	struct PlacedButton
+	{
+		uint32_t buttonID;
+		int32_t page;
+	};
+
+	std::vector<PlacedButton> placedButtons;
+	int32_t pageCount = 0;
+	int32_t currentPage = 1;
+	bool layoutLogged = false;
 
 	DataViewHighlightManager occupantHighlightManager;
 
-	uint32_t CountPages(cIGZWin* grid)
+	uint32_t MaxisButtonForViewMode(uint32_t viewMode)
 	{
-		uint32_t pages = 0;
-
-		while (pages < MaxPages && grid->GetChildWindowFromID(PageContainerBase + pages + 1))
+		for (const MaxisDataViewButton& entry : MaxisDataViewButtons)
 		{
-			pages++;
+			if (entry.viewMode == viewMode)
+			{
+				return entry.buttonID;
+			}
 		}
 
-		return pages;
+		return 0;
 	}
 
-	void ShowPage(cIGZWin* panel, uint32_t page)
+	bool ReadButtonCell(cIGZPersistResourceManager* resources, uint32_t viewMode, int32_t& column, int32_t& row)
 	{
-		if (!panel)
+		const cGZPersistResourceKey key(ExemplarType, DataViewGroup, DataViewInstanceBase + viewMode);
+
+		if (!resources->TestForKey(key))
 		{
-			return;
+			return false;
 		}
 
-		cIGZWin* grid = panel->GetChildWindowFromIDRecursive(ButtonGridID);
+		cRZAutoRefCount<cISCResExemplar> exemplar;
 
-		if (!grid)
+		if (!resources->GetResource(key, GZIID_cISCResExemplar, exemplar.AsPPVoid(), 0, nullptr) || !exemplar)
 		{
-			return;
+			return false;
 		}
 
-		const uint32_t pages = CountPages(grid);
+		const cISCPropertyHolder* holder = exemplar->AsISCPropertyHolder();
+		const cISCProperty* property = holder ? holder->GetProperty(PropDataViewButtonCell) : nullptr;
+		const cIGZVariant* value = property ? property->GetPropertyValue() : nullptr;
 
-		if (pages == 0)
+		if (!value || value->GetCount() < 2)
 		{
-			return; // A data view UI without pages (the Maxis UI or an older ExtendedDataViewUI.dat).
+			return false;
 		}
 
-		if (page < 1 || page > pages)
+		switch (value->GetType())
+		{
+		case cIGZVariant::Uint8Array:
+			column = value->RefUint8()[0];
+			row = value->RefUint8()[1];
+			return true;
+		case cIGZVariant::Uint32Array:
+			column = static_cast<int32_t>(value->RefUint32()[0]);
+			row = static_cast<int32_t>(value->RefUint32()[1]);
+			return true;
+		case cIGZVariant::Sint32Array:
+			column = value->RefSint32()[0];
+			row = value->RefSint32()[1];
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	// Places every button with a Data View Button Cell, hides the custom buttons without one and counts the pages.
+	// Returns false when no data view has the property: the panel is then left as the UI builds it.
+	bool LayOutButtons(cIGZWin* grid)
+	{
+		cIGZPersistResourceManagerPtr resources;
+
+		placedButtons.clear();
+		pageCount = 0;
+
+		if (!resources)
+		{
+			return false;
+		}
+
+		bool taken[MaxPages * PageRows][GridColumns]{};
+		uint32_t listed = 0;
+		uint32_t placed = 0;
+		uint32_t missing = 0;
+		uint32_t moved = 0;
+		uint32_t kept = 0;
+
+		struct Pending
+		{
+			uint32_t viewMode;
+			cIGZWin* button;
+			int32_t column;
+			int32_t row;
+			bool hasCell;
+		};
+
+		std::vector<Pending> pending;
+
+		for (uint32_t viewMode = 1; viewMode <= MaxViewMode; viewMode++)
+		{
+			const uint32_t maxisButton = MaxisButtonForViewMode(viewMode);
+			cIGZWin* button = grid->GetChildWindowFromID(maxisButton ? maxisButton : CustomButtonBase + viewMode);
+			int32_t column = 0;
+			int32_t row = 0;
+			const bool hasCell = ReadButtonCell(resources, viewMode, column, row);
+
+			if (hasCell)
+			{
+				listed++;
+			}
+
+			if (button)
+			{
+				pending.push_back({ viewMode, button, column, row, hasCell });
+			}
+			else if (hasCell)
+			{
+				missing++;
+				Logger::GetInstance().WriteLineFormatted(
+					LogLevel::Error,
+					"Data view 0x%08X has a Data View Button Cell but ExtendedDataViewUI.dat has no button 0x%04X for it.",
+					DataViewInstanceBase + viewMode,
+					CustomButtonBase + viewMode);
+			}
+		}
+
+		if (listed == 0)
+		{
+			return false;
+		}
+
+		// Cells inside the grid first, then the rest in the next free cell.
+		for (Pending& item : pending)
+		{
+			if (!item.hasCell)
+			{
+				continue;
+			}
+
+			if (item.column >= 0 && item.column < GridColumns && item.row >= 0 && item.row < MaxPages * PageRows
+				&& !taken[item.row][item.column])
+			{
+				taken[item.row][item.column] = true;
+			}
+			else
+			{
+				item.row = -1;
+			}
+		}
+
+		for (Pending& item : pending)
+		{
+			if (item.hasCell && item.row < 0)
+			{
+				for (int32_t row = 0; row < MaxPages * PageRows && item.row < 0; row++)
+				{
+					for (int32_t column = 0; column < GridColumns; column++)
+					{
+						if (!taken[row][column])
+						{
+							taken[row][column] = true;
+							item.row = row;
+							item.column = column;
+							moved++;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		for (const Pending& item : pending)
+		{
+			const uint32_t buttonID = item.button->GetID();
+
+			if (item.hasCell && item.row >= 0)
+			{
+				const int32_t top = 1 + RowHeight * (item.row % PageRows + 1);
+				item.button->SetArea(ColumnLeft[item.column], top, ColumnRight[item.column], top + RowHeight);
+
+				const int32_t page = item.row / PageRows + 1;
+				placedButtons.push_back({ buttonID, page });
+				pageCount = std::max(pageCount, page);
+				placed++;
+			}
+			else if (buttonID < CustomButtonBase)
+			{
+				// A Maxis button whose data view has no cell (overridden by another mod): it stays on page 1, where
+				// the UI has it.
+				placedButtons.push_back({ buttonID, 1 });
+				pageCount = std::max(pageCount, 1);
+				kept++;
+				Logger::GetInstance().WriteLineFormatted(
+					LogLevel::Error,
+					"Data view 0x%08X has no Data View Button Cell (another plugin overrides it?): its Maxis button 0x%04X stays on page 1.",
+					DataViewInstanceBase + item.viewMode,
+					buttonID);
+			}
+			else
+			{
+				item.button->HideWindow();
+			}
+		}
+
+		if (!layoutLogged)
+		{
+			layoutLogged = true;
+			Logger::GetInstance().WriteLineFormatted(
+				LogLevel::Info,
+				"Data Views panel: %u data views with a button cell, %u buttons placed (%u moved to a free cell), %u Maxis buttons kept, %u buttons missing; %d page(s).",
+				listed,
+				placed,
+				moved,
+				kept,
+				missing,
+				pageCount);
+		}
+
+		return true;
+	}
+
+	void ShowPage(cIGZWin* grid, int32_t page)
+	{
+		if (page < 1 || page > pageCount)
 		{
 			page = 1;
 		}
 
 		currentPage = page;
 
-		for (uint32_t i = 1; i <= pages; i++)
+		for (const PlacedButton& item : placedButtons)
 		{
-			cIGZWin* container = grid->GetChildWindowFromID(PageContainerBase + i);
+			cIGZWin* button = grid->GetChildWindowFromID(item.buttonID);
 
-			if (i == page)
+			if (button)
 			{
-				container->ShowWindow();
-			}
-			else
-			{
-				container->HideWindow();
+				if (item.page == page)
+				{
+					button->ShowWindow();
+				}
+				else
+				{
+					button->HideWindow();
+				}
 			}
 		}
 
@@ -141,7 +374,7 @@ namespace
 
 			if (window)
 			{
-				if (pages > 1)
+				if (pageCount > 1)
 				{
 					window->ShowWindow();
 				}
@@ -157,7 +390,7 @@ namespace
 		if (label)
 		{
 			char text[32]{};
-			std::snprintf(text, sizeof(text), "%u / %u", page, pages);
+			std::snprintf(text, sizeof(text), "%d / %d", page, pageCount);
 			label->SetCaption(cRZBaseString(text));
 		}
 	}
@@ -170,28 +403,33 @@ namespace
 		{
 			cIGZWin* panel = *reinterpret_cast<cIGZWin**>(esi + 0x48);
 			cIGZWin* grid = panel ? panel->GetChildWindowFromIDRecursive(ButtonGridID) : nullptr;
-			const uint32_t pages = grid ? CountPages(grid) : 0;
 
-			if (pages > 1)
+			if (grid && pageCount > 1)
 			{
-				uint32_t page = currentPage;
+				int32_t page = currentPage;
 
 				if (buttonID == NextPageButtonID)
 				{
-					page = page >= pages ? 1 : page + 1;
+					page = page >= pageCount ? 1 : page + 1;
 				}
 				else
 				{
-					page = page <= 1 ? pages : page - 1;
+					page = page <= 1 ? pageCount : page - 1;
 				}
 
-				ShowPage(panel, page);
+				ShowPage(grid, page);
 			}
 
 			return true;
 		}
 
-		for (const ExtraDataViewButton& button : ExtraDataViewButtons)
+		if (buttonID > CustomButtonBase && buttonID <= CustomButtonBase + MaxViewMode)
+		{
+			OnViewModeButtonSelected(esi - 8, buttonID, buttonID - CustomButtonBase);
+			return true;
+		}
+
+		for (const LegacyDataViewButton& button : LegacyDataViewButtons)
 		{
 			if (buttonID == button.id1 || buttonID == button.id2)
 			{
@@ -308,7 +546,12 @@ namespace
 
 		if (mapView->QueryInterface(GZIID_cIGZWin, pTargetWin.AsPPVoid()))
 		{
-			for (const ExtraDataViewButton& button : ExtraDataViewButtons)
+			for (uint32_t viewMode = 1; viewMode <= MaxViewMode; viewMode++)
+			{
+				SetNotificationTarget(parent, pTargetWin, CustomButtonBase + viewMode);
+			}
+
+			for (const LegacyDataViewButton& button : LegacyDataViewButtons)
 			{
 				SetNotificationTarget(parent, pTargetWin, button.id1);
 				SetNotificationTarget(parent, pTargetWin, button.id2);
@@ -320,7 +563,12 @@ namespace
 			}
 		}
 
-		ShowPage(parent, currentPage);
+		cIGZWin* grid = parent->GetChildWindowFromIDRecursive(ButtonGridID);
+
+		if (grid && LayOutButtons(grid))
+		{
+			ShowPage(grid, currentPage);
+		}
 	}
 
 	static const uintptr_t ShowWindow_Continue = 0x7A62E0;
