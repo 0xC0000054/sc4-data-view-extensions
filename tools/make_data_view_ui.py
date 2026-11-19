@@ -21,6 +21,7 @@ from data_view_layout import LAYOUT, MAXIS_BUTTONS, CUSTOM_BUTTON_BASE, CAPTIONS
 
 UI_KEY = (0x00000000, 0x96A006B0, 0x2BC9060F)
 LTEXT = 0x2026960B
+PNG = 0x856DDBAC
 EXEMPLAR, DATA_VIEW_GROUP, DATA_VIEW_BASE = 0x6534284A, 0x690F693F, 0x4A0B6800
 PROP_DATA_SOURCE = 0x4A0B47E5
 PROP_BUTTON_CELL = 0x5C4DF150
@@ -49,14 +50,37 @@ def wid(line):
     m = re.search(r' id=0x([0-9a-fA-F]{8})', line)
     return int(m.group(1), 16) if m else None
 
-NAV_BUTTON = ('<LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x%08x area=(%d,%d,%d,%d) fillcolor=(156,178,194) caption="%s" '
+# Page buttons: the Maxis "Show previous / next picture" arrows (UI 0x4A8CC5EA, images 0x1ABE787D / 0x14416272 and
+# 0x14416273, 4 states of 20 x 24), scaled to the 18-pixel rows of the grid (4 states of 15 x 18).
+NAV_IMAGE_GROUP = 0x1ABE787D
+NAV_IMAGES = {NAV_PREV: (0x14416272, 0x5C4DF1E0), NAV_NEXT: (0x14416273, 0x5C4DF1E1)}   # button: (Maxis, scaled)
+NAV_W, NAV_H = 15, 18
+NAV_LABEL_W = 50
+NAV_BUTTON = ('<LEGACY clsid=GZWinBtn iid=IGZWinBtn id=0x%08x area=(%d,%d,%d,%d) fillcolor=(192,192,192) '
     'winflag_visible=no winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no '
     'winflag_pbufftrans=yes winflag_pbufferase=yes winflag_pbuffvid=no winflag_alphablend=yes winflag_acceptfocus=yes '
-    'winflag_mousetrans=no winflag_ignoremouse=no font=GenBodyLight colorfontnormal=(63,73,103) '
-    'colorfontdisabled=(102,102,102) colorfonthilited=(255,255,255) colorfontnormalbkg=(0,0,0) '
-    'colorfontdisabledbkg=(0,0,0) colorfonthilitedbkg=(0,0,0) toggle=off triggerondown=off showcaption=yes '
-    'fill=no autosize=no wrapcaption=no shiftcaption=no tips=no tipsdelay=no tipstimeout=no style=standard '
-    'gutters=(0,0,0,0) tiptext="" tipoffsets=(0,0) tipflag=0x01000000 align=center btnclicksnd={ca4d1943,2a5c322b} >')
+    'winflag_mousetrans=no winflag_ignoremouse=no image={%08x,%08x} colorfontnormal=(0,0,0) colorfontdisabled=(0,0,0) '
+    'colorfonthilited=(0,0,0) colorfontnormalbkg=(0,0,0) colorfontdisabledbkg=(0,0,0) colorfonthilitedbkg=(0,0,0) '
+    'toggle=off triggerondown=off showcaption=no fill=yes autosize=no wrapcaption=no shiftcaption=yes tips=yes '
+    'tipsdelay=no tipstimeout=no style=standard gutters=(0,0,0,0) tiptext="%s" tipoffsets=(0,0) tipflag=0x01000000 '
+    'align=center btnclicksnd={ca47efd9,4a5c31d7} >')
+
+def nav_images(game_entries):
+    """The two arrow strips scaled to NAV_W x NAV_H per state, as PNG entries."""
+    import io
+    from PIL import Image
+    out = []
+    for maxis, scaled in NAV_IMAGES.values():
+        e = next(e for e in game_entries if (e['t'], e['g'], e['i']) == (PNG, NAV_IMAGE_GROUP, maxis))
+        src = Image.open(io.BytesIO(e['data'])).convert('RGBA')
+        w, h = src.width // 4, src.height
+        strip = Image.new('RGBA', (4 * NAV_W, NAV_H))
+        for state in range(4):
+            strip.paste(src.crop((w * state, 0, w * state + w, h)).resize((NAV_W, NAV_H), Image.LANCZOS), (NAV_W * state, 0))
+        buf = io.BytesIO()
+        strip.save(buf, 'PNG')
+        out.append(dict(t=PNG, g=NAV_IMAGE_GROUP, i=scaled, data=buf.getvalue()))
+    return out
 
 NAV_TEXT = ('<LEGACY clsid=GZWinText iid=IGZWinText id=0x%08x area=(%d,%d,%d,%d) fillcolor=(0,136,0) caption="%s" '
     'winflag_visible=no winflag_enabled=yes winflag_moveable=yes winflag_sizeable=no winflag_sortable=no winflag_pbuff=no '
@@ -99,10 +123,11 @@ def build_ui(text, pages):
             line = line.replace('winflag_visible=yes', 'winflag_visible=no', 1)
         new.append(line)
 
-    left, right = COLUMN_X[2][0], COLUMN_X[3][1]
-    nav = [NAV_BUTTON % (NAV_PREV, left, 1, left + 70, 1 + ROW, '< Previous'),
-           NAV_TEXT % (NAV_LABEL, left + 70, 1, right - 70, 1 + ROW, '1 / %d' % pages),
-           NAV_BUTTON % (NAV_NEXT, right - 70, 1, right, 1 + ROW, 'Next >')]
+    right = COLUMN_X[3][1]                 # arrows and page number as one group at the right end of row 0
+    left = right - 2 * NAV_W - NAV_LABEL_W
+    nav = [NAV_BUTTON % ((NAV_PREV, left, 1, left + NAV_W, 1 + NAV_H, NAV_IMAGE_GROUP, NAV_IMAGES[NAV_PREV][1], 'Previous page')),
+           NAV_TEXT % (NAV_LABEL, left + NAV_W, 1, right - NAV_W, 1 + ROW, '1 / %d' % pages),
+           NAV_BUTTON % ((NAV_NEXT, right - NAV_W, 1, right, 1 + NAV_H, NAV_IMAGE_GROUP, NAV_IMAGES[NAV_NEXT][1], 'Next page'))]
     lines[end:end] = [indent + l for l in new + nav]
     return '\r\n'.join(lines)
 
@@ -151,6 +176,7 @@ def main(game, ui_1_0, transient, out_dir):
     ui_entries = [dict(t=UI_KEY[0], g=UI_KEY[1], i=UI_KEY[2],
                        data=build_ui(ui['data'].decode('latin1'), pages).encode('latin1'))]
     ui_entries += [e for e in v10 if e['t'] == LTEXT and e['g'] == BUTTON_TEXT_GROUP]
+    ui_entries += nav_images(game_entries)
     ui_entries += [dict(t=LTEXT, g=BUTTON_TEXT_GROUP, i=CAPTION_BASE + m, data=ltext(c)) for m, c in sorted(CAPTIONS.items())]
 
     os.makedirs(out_dir, exist_ok=True)
