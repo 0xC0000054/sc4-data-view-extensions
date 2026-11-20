@@ -45,3 +45,14 @@ CAPTIONS = {
     0x14: 'Residential Desir.', 0x15: 'Comm. Service Desir.', 0x16: 'Comm. Office Desir.', 0x17: 'Industrial Desir.',
 }
 CAPTION_1_0 = {0x1D: 0x4AD045DD, 0x0C: 0x4AD045DE, 0x0D: 0x4AD045DF}
+
+# Legends added to the zone desirability data views of the game, which have none: the legend of the Maxis desirability
+# sub views (R$, CS$, IR, ...: the same colour ramp; colours and the texts "Low Desirability" / "High Desirability" of
+# SimCityLocale.dat), with a header of their own (LTEXT group 0x6A231EAA): view mode -> (header instance, header text).
+LEGENDS = {
+    0x14: (0x5C4DF160, 'Residential (All Wealth)'),
+    0x15: (0x5C4DF161, 'Commercial Service (All Wealth)'),
+    0x16: (0x5C4DF162, 'Commercial Office (All Wealth)'),
+    0x17: (0x5C4DF163, 'Industrial (All Types)'),
+}
+LEGEND_TEMPLATE = 0x28  # R$ Desirability: the data view whose legend properties are copied

@@ -6,7 +6,8 @@
 #
 # DataViews.dat     every data view of the game (the exemplars of SimCity_1.dat with a DataView: Data source) and
 #                   the ones of the DLL (Moisture, Park Aura, Landmark Aura, Transient Aura), each listed one with the
-#                   property Data View Button Cell (0x5C4DF150: column, row) from tools/data_view_layout.py.
+#                   property Data View Button Cell (0x5C4DF150: column, row) from tools/data_view_layout.py. The zone
+#                   desirability data views also get the legend of the Maxis desirability sub views (LEGENDS).
 # ExtendedDataViewUI.dat
 #                   the Data Views panel of the game (UI 0x96A006B0 / 0x2BC9060F) with a button for every data view
 #                   that has a cell: the Maxis buttons keep their IDs and cells (page 1), the others are buttons
@@ -20,7 +21,7 @@
 import os, re, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dbpf2
-from data_view_layout import LAYOUT, MAXIS_BUTTONS, CUSTOM_BUTTON_BASE, CAPTIONS, CAPTION_1_0
+from data_view_layout import LAYOUT, MAXIS_BUTTONS, CUSTOM_BUTTON_BASE, CAPTIONS, CAPTION_1_0, LEGENDS, LEGEND_TEMPLATE
 
 UI_KEY = (0x00000000, 0x96A006B0, 0x2BC9060F)
 LTEXT = 0x2026960B
@@ -144,6 +145,33 @@ def button_template(text):
     assert 'style=radiocheck' in line and 'captionres' not in line and 'winflag_visible=yes' in line
     return ('# SC4DataViewExtensions button template (copy of the Maxis Fire Hazard button)\r\n' + line + '\r\n').encode('latin1')
 
+LEGEND_PROPS = (0x4A0B47ED, 0x4A0B47F2, 0x4A0B47F3)   # legend style, colours, texts (copied)
+PROP_LEGEND_HEADER = 0x4A0B47F4
+LEGEND_TEXT_GROUP = 0x6A231EAA
+
+def properties(data):
+    """Binary exemplar -> [(id, raw record)]."""
+    assert data[:8] == b'EQZB1###'
+    size = {1: 1, 2: 2, 3: 4, 7: 4, 8: 8, 9: 4, 0xB: 1, 0xC: 1}
+    n, p, out = struct.unpack_from('<I', data, 20)[0], 24, []
+    for _ in range(n):
+        start = p
+        pid, typ, kt = struct.unpack_from('<IHH', data, p)
+        p += 9
+        p += 4 + size[typ >> 8] * struct.unpack_from('<I', data, p)[0] if kt & 0x80 else size[typ >> 8]
+        out.append((pid, data[start:p]))
+    assert p == len(data)
+    return out
+
+def add_legend(data, template, header):
+    """Copies the legend of template into data (a data view without one) with its own header LTEXT instance."""
+    props = [(pid, raw) for pid, raw in properties(data) if pid not in LEGEND_PROPS + (PROP_LEGEND_HEADER,)]
+    legend = [raw for pid, raw in properties(template) if pid in LEGEND_PROPS]
+    assert len(legend) == len(LEGEND_PROPS), 'template without a legend'
+    legend.append(struct.pack('<IHHBI', PROP_LEGEND_HEADER, 0x0300, 0, 0, header))
+    out = [raw for _, raw in props] + legend
+    return data[:20] + struct.pack('<I', len(out)) + b''.join(out)
+
 def add_cell(data, column, row):
     """Appends Data View Button Cell (Uint32 x 2) to a binary exemplar (EQZB1###)."""
     assert data[:8] == b'EQZB1###'
@@ -179,6 +207,9 @@ def main(game, ui_1_0, transient, out_dir):
                 views[e['i']] = e['data']
         elif e['t'] == LTEXT and e['g'] != BUTTON_TEXT_GROUP:
             texts.append(e)                               # legend texts
+    for mode, (header, text) in LEGENDS.items():
+        views[DATA_VIEW_BASE + mode] = add_legend(views[DATA_VIEW_BASE + mode], views[DATA_VIEW_BASE + LEGEND_TEMPLATE], header)
+        texts.append(dict(t=LTEXT, g=LEGEND_TEXT_GROUP, i=header, data=ltext(text)))
     for mode, cell in LAYOUT.items():
         assert DATA_VIEW_BASE + mode in views, hex(mode)
         views[DATA_VIEW_BASE + mode] = add_cell(views[DATA_VIEW_BASE + mode], *cell)

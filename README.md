@@ -81,7 +81,10 @@ and the page controls `< Previous`, page number, `Next >` (`0x5C4DF1F0`, `0x5C4D
 cell row r is grid row r % 4 + 1 of page r / 4 + 1. Page 1 is the Maxis layout; page 2 holds Moisture, the four zone desirability
 data views (data views of the game without a button), Park Aura, Landmark Aura and Transient Aura. The game's Crime
 (`0x04`) and Flammability (`0x06`) data views get no button: they read the same grids as the Crime and Fire Hazard
-buttons, with no legend, and Flammability's colour ramp is fully transparent. The page controls are shown only when there is more than one page.
+buttons, with no legend, and Flammability's colour ramp is fully transparent. The four zone desirability data views, which have no
+legend in the game, get the legend of the Maxis desirability sub views (same colour ramp, "Low Desirability" to "High
+Desirability") with their own header: *Residential (All Wealth)*, *Commercial Service (All Wealth)*, *Commercial Office
+(All Wealth)*, *Industrial (All Types)* (LTEXT `0x6A231EAA / 0x5C4DF160`-`0x5C4DF163`, in `DataViews.dat`). The page controls are shown only when there is more than one page.
 
 Both DAT files are built by `tools/make_data_view_ui.py` (cells in `tools/data_view_layout.py`) from the game's
 `SimCity_1.dat` and the 1.0 DAT files in `dat/source`:
