@@ -4,8 +4,8 @@ A DLL Plugin for SimCity 4 that extends the game's data views.
 
 This plugin includes a modified data view UI that adds dedicated radio buttons
 for Moisture, Park Aura, Landmark Aura and Transient Aura data views.
-It also gives a button to the data views of the game that had none (Crime Map, Flammability and the four zone
-desirability views; the per-wealth desirability and traffic volume views stay in the Desirability and Traffic sub views).
+It also gives a button to the four zone desirability views of the game, which had none (Crime and Flammability,
+duplicates of the Crime and Fire Hazard views, get none; the per-wealth desirability and traffic volume views stay in the Desirability and Traffic sub views).
 Each button is placed by the Data View Button Cell of its data view, the Data Views panel keeps the size and position of
 the Maxis panel and its buttons are split in pages (see [Data View Button Cell](#data-view-button-cell)). The Maxis
 buttons keep their IDs and cells, so the UI will work with existing mods that re-purpose the Maxis data view radio
@@ -78,9 +78,10 @@ When the Data Views panel opens, the DLL reads the cell of every data view and p
 
 The panel keeps the size and position of the Maxis panel. Row 0 of the button grid (window `0x8A2871D6`) holds All Off
 and the page controls `< Previous`, page number, `Next >` (`0x5C4DF1F0`, `0x5C4DF1F2`, `0x5C4DF1F1`) on every page;
-cell row r is grid row r % 4 + 1 of page r / 4 + 1. Page 1 is the Maxis layout; page 2 holds Crime Map and Flammability
-(data views of the game without a button), Moisture, the four zone desirability data views, Park Aura, Landmark Aura and
-Transient Aura. The page controls are shown only when there is more than one page.
+cell row r is grid row r % 4 + 1 of page r / 4 + 1. Page 1 is the Maxis layout; page 2 holds Moisture, the four zone desirability
+data views (data views of the game without a button), Park Aura, Landmark Aura and Transient Aura. The game's Crime
+(`0x04`) and Flammability (`0x06`) data views get no button: they read the same grids as the Crime and Fire Hazard
+buttons, with no legend, and Flammability's colour ramp is fully transparent. The page controls are shown only when there is more than one page.
 
 Both DAT files are built by `tools/make_data_view_ui.py` (cells in `tools/data_view_layout.py`) from the game's
 `SimCity_1.dat` and the 1.0 DAT files in `dat/source`:

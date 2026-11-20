@@ -19,10 +19,10 @@ LAYOUT = {
     0x18: (3, 1),  # Water Pollution
     0x19: (3, 2),  # Garbage Pollution
     0x1A: (3, 3),  # Radiation Pollution
-    # page 2: the data views of the game that had no button, and the ones of this DLL
-    0x04: (0, 4),  # Crime (crime map without the police coverage)
-    0x06: (0, 5),  # Flammability
-    0x1D: (0, 6),  # Moisture
+    # page 2: the zone desirability data views of the game, which had no button, and the data views of this DLL.
+    # Crime (0x04) and Flammability (0x06) get no button: they read the same grids as Crime and Fire Hazard (data
+    # sources 4 and 6), with no legend, and Flammability's colours are fully transparent (Maxis leftovers).
+    0x1D: (0, 4),  # Moisture
     0x14: (2, 4),  # Residential Desirability
     0x15: (2, 5),  # Commercial Service Desirability
     0x16: (2, 6),  # Commercial Office Desirability
@@ -41,7 +41,7 @@ CUSTOM_BUTTON_BASE = 0x5200  # any other data view: button 0x5200 + view mode
 
 # Captions of the new buttons (LTEXT group 0x6A554AFD; Moisture, Park Aura and Landmark Aura keep their 1.0 texts).
 CAPTIONS = {
-    0x04: 'Crime Map', 0x06: 'Flammability', 0x0E: 'Transient Aura',
+    0x0E: 'Transient Aura',
     0x14: 'Residential Desir.', 0x15: 'Comm. Service Desir.', 0x16: 'Comm. Office Desir.', 0x17: 'Industrial Desir.',
 }
 CAPTION_1_0 = {0x1D: 0x4AD045DD, 0x0C: 0x4AD045DE, 0x0D: 0x4AD045DF}
