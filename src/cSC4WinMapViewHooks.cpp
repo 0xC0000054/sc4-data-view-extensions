@@ -27,10 +27,15 @@
 #include "cISCPropertyHolder.h"
 #include "cISCResExemplar.h"
 #include "GZServPtrs.h"
+#include "cIGZString.h"
+#include "cIGZUIScriptService.h"
 #include "Logger.h"
+#include "StringResourceKey.h"
+#include "StringResourceManager.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace
@@ -72,14 +77,27 @@ namespace
 
 	// Data View Button Cell: the data views with this property in their exemplar (type 0x6534284A, group 0x690F693F,
 	// instance 0x4A0B6800 + view mode) get a button in the Data Views panel, in that cell. The Maxis data views use
-	// the Maxis buttons, every other one the button CustomButtonBase + view mode, which must be in the UI
-	// (ExtendedDataViewUI.dat): buttons created at run time do not receive clicks.
+	// the Maxis buttons, every other one the button CustomButtonBase + view mode. A data view whose button is not in
+	// the UI (ExtendedDataViewUI.dat), such as one added by another plugin, gets a button created at run time from the
+	// button template UI; like the buttons of the UI, it sends its clicks to the map view (RegisterCustom-
+	// RadioButtonNotifications), whose DoMessage selects the view mode.
 	static const uint32_t ExemplarType = 0x6534284A;
 	static const uint32_t DataViewGroup = 0x690F693F;
 	static const uint32_t DataViewInstanceBase = 0x4A0B6800;
 	static const uint32_t PropDataViewButtonCell = 0x5C4DF150;
 	static const uint32_t CustomButtonBase = 0x5200;
 	static const uint32_t MaxViewMode = 0xFF;
+
+	// Button template UI in ExtendedDataViewUI.dat: one radio button (a copy of the Maxis Fire Hazard button without
+	// its caption), ID ButtonTemplateID. Its caption is the LTEXT ButtonTextGroup / CaptionBase + view mode, else the
+	// data view exemplar's name without "DataView: ".
+	static const uint32_t UiType = 0x00000000;
+	static const uint32_t UiGroup = 0x96A006B0;
+	static const uint32_t ButtonTemplateUi = 0x5C4DF300;
+	static const uint32_t ButtonTemplateID = 0x5C4DF301;
+	static const uint32_t ButtonTextGroup = 0x6A554AFD;
+	static const uint32_t CaptionBase = 0x5C4DF200;
+	static const uint32_t PropExemplarName = 0x00000020;
 
 	struct MaxisDataViewButton
 	{
@@ -185,9 +203,100 @@ namespace
 		}
 	}
 
+	void ReadButtonCaption(cIGZPersistResourceManager* resources, uint32_t viewMode, cRZBaseString& caption)
+	{
+		cRZAutoRefCount<cIGZString> text;
+
+		if (StringResourceManager::GetLocalizedString(StringResourceKey(ButtonTextGroup, CaptionBase + viewMode), text.AsPPObj())
+			&& text && text->Strlen() > 0)
+		{
+			caption.Copy(*text);
+			return;
+		}
+
+		cRZAutoRefCount<cISCResExemplar> exemplar;
+		const cGZPersistResourceKey key(ExemplarType, DataViewGroup, DataViewInstanceBase + viewMode);
+
+		if (resources->GetResource(key, GZIID_cISCResExemplar, exemplar.AsPPVoid(), 0, nullptr) && exemplar)
+		{
+			const cISCPropertyHolder* holder = exemplar->AsISCPropertyHolder();
+			cRZBaseString name;
+
+			if (holder && holder->GetProperty(PropExemplarName, name) && name.Strlen() > 0)
+			{
+				static const char prefix[] = "DataView: ";
+				const char* value = name.ToChar();
+
+				if (std::strncmp(value, prefix, sizeof(prefix) - 1) == 0 && value[sizeof(prefix) - 1] != '\0')
+				{
+					value += sizeof(prefix) - 1;
+				}
+
+				caption.FromChar(value);
+				return;
+			}
+		}
+
+		char fallback[32]{};
+		std::snprintf(fallback, sizeof(fallback), "Data View 0x%02X", viewMode);
+		caption.FromChar(fallback);
+	}
+
+	// Creates the button CustomButtonBase + view mode in the grid from the button template UI, for a data view whose
+	// button is not in ExtendedDataViewUI.dat. The button sends its clicks to clickTarget (the map view).
+	cIGZWin* CreateDataViewButton(
+		cIGZPersistResourceManager* resources,
+		cIGZWin* grid,
+		cIGZWin* clickTarget,
+		uint32_t viewMode)
+	{
+		const cGZPersistResourceKey templateKey(UiType, UiGroup, ButtonTemplateUi);
+
+		if (!resources->TestForKey(templateKey))
+		{
+			return nullptr;
+		}
+
+		cIGZUIScriptServicePtr scripts;
+		cRZAutoRefCount<cIGZWin> created;
+
+		if (!scripts
+			|| !scripts->CreateWindowFromScript(templateKey, grid, ButtonTemplateID, GZIID_cIGZWin, created.AsPPVoid())
+			|| !created)
+		{
+			return nullptr;
+		}
+
+		cRZBaseString caption;
+		ReadButtonCaption(resources, viewMode, caption);
+
+		created->SetID(CustomButtonBase + viewMode);
+		created->SetCaption(caption);
+
+		cIGZWin* const templateTarget = created->GetNotificationTarget();
+
+		if (clickTarget)
+		{
+			created->SetNotificationTarget(clickTarget);
+		}
+
+		Logger::GetInstance().WriteLineFormatted(
+			LogLevel::Debug,
+			"Data view 0x%08X: button 0x%04X \"%s\" created at run time, click target %p (template gave %p).",
+			DataViewInstanceBase + viewMode,
+			CustomButtonBase + viewMode,
+			caption.ToChar(),
+			static_cast<void*>(created->GetNotificationTarget()),
+			static_cast<void*>(templateTarget));
+
+		// The grid owns the window; the pointer stays valid while the panel exists.
+		return grid->GetChildWindowFromID(CustomButtonBase + viewMode);
+	}
+
 	// Places every button with a Data View Button Cell, hides the custom buttons without one and counts the pages.
+	// A data view with a cell but no button in the UI gets one from the button template (see CreateDataViewButton).
 	// Returns false when no data view has the property: the panel is then left as the UI builds it.
-	bool LayOutButtons(cIGZWin* grid)
+	bool LayOutButtons(cIGZWin* grid, cIGZWin* clickTarget)
 	{
 		cIGZPersistResourceManagerPtr resources;
 
@@ -203,6 +312,7 @@ namespace
 		uint32_t listed = 0;
 		uint32_t placed = 0;
 		uint32_t missing = 0;
+		uint32_t created = 0;
 		uint32_t moved = 0;
 		uint32_t kept = 0;
 
@@ -236,12 +346,24 @@ namespace
 			}
 			else if (hasCell)
 			{
-				missing++;
-				Logger::GetInstance().WriteLineFormatted(
-					LogLevel::Error,
-					"Data view 0x%08X has a Data View Button Cell but ExtendedDataViewUI.dat has no button 0x%04X for it.",
-					DataViewInstanceBase + viewMode,
-					CustomButtonBase + viewMode);
+				cIGZWin* newButton = maxisButton ? nullptr : CreateDataViewButton(resources, grid, clickTarget, viewMode);
+
+				if (newButton)
+				{
+					created++;
+					pending.push_back({ viewMode, newButton, column, row, hasCell });
+				}
+				else
+				{
+					missing++;
+					Logger::GetInstance().WriteLineFormatted(
+						LogLevel::Error,
+						"Data view 0x%08X has a Data View Button Cell, but there is no button 0x%04X for it and none could be "
+						"created (button template UI 0x%08X missing from ExtendedDataViewUI.dat?).",
+						DataViewInstanceBase + viewMode,
+						maxisButton ? maxisButton : CustomButtonBase + viewMode,
+						ButtonTemplateUi);
+				}
 			}
 		}
 
@@ -328,9 +450,10 @@ namespace
 			layoutLogged = true;
 			Logger::GetInstance().WriteLineFormatted(
 				LogLevel::Info,
-				"Data Views panel: %u data views with a button cell, %u buttons placed (%u moved to a free cell), %u Maxis buttons kept, %u buttons missing; %d page(s).",
+				"Data Views panel: %u data views with a button cell, %u buttons placed (%u created at run time, %u moved to a free cell), %u Maxis buttons kept, %u buttons missing; %d page(s).",
 				listed,
 				placed,
+				created,
 				moved,
 				kept,
 				missing,
@@ -565,7 +688,7 @@ namespace
 
 		cIGZWin* grid = parent->GetChildWindowFromIDRecursive(ButtonGridID);
 
-		if (grid && LayOutButtons(grid))
+		if (grid && LayOutButtons(grid, pTargetWin))
 		{
 			ShowPage(grid, currentPage);
 		}

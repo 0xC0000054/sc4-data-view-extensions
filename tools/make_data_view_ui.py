@@ -11,9 +11,12 @@
 #                   the Data Views panel of the game (UI 0x96A006B0 / 0x2BC9060F) with a button for every data view
 #                   that has a cell: the Maxis buttons keep their IDs and cells (page 1), the others are buttons
 #                   0x5200 + view mode, hidden when they are not on page 1. Row 0 holds All Off and the page controls.
+#                   Also the button template UI 0x96A006B0 / 0x5C4DF300 (one radio button, ID 0x5C4DF301): the DLL
+#                   creates from it the button of a data view that has a cell but no button in the UI.
 #
 # The DLL reads the cells when the panel opens, so a cell changed in DataViews.dat (or in a later plugin) moves the
-# button without a new UI; the UI only has to contain the button. See README.md, "Data View Button Cell".
+# button without a new UI, and a data view added by another plugin gets a button created at run time. See README.md,
+# "Data View Button Cell".
 import os, re, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dbpf2
@@ -27,6 +30,7 @@ PROP_DATA_SOURCE = 0x4A0B47E5
 PROP_BUTTON_CELL = 0x5C4DF150
 BUTTON_TEXT_GROUP = 0x6A554AFD
 CAPTION_BASE = 0x5C4DF200          # LTEXT of a new button: CAPTION_BASE + view mode
+BUTTON_TEMPLATE_UI, BUTTON_TEMPLATE_ID = 0x5C4DF300, 0x5C4DF301
 
 GRID = 0x8A2871D6
 NAV_PREV, NAV_NEXT, NAV_LABEL = 0x5C4DF1F0, 0x5C4DF1F1, 0x5C4DF1F2
@@ -131,6 +135,15 @@ def build_ui(text, pages):
     lines[end:end] = [indent + l for l in new + nav]
     return '\r\n'.join(lines)
 
+def button_template(text):
+    """The Maxis Fire Hazard button (0x5002) as a one-window UI: ID BUTTON_TEMPLATE_ID, no caption, at the origin."""
+    line = next(l for l in text.split('\r\n') if ' id=0x00005002 ' in l).strip()
+    line = line.replace(' id=0x00005002 ', ' id=0x%08x ' % BUTTON_TEMPLATE_ID, 1)
+    line = re.sub(r'caption="[^"]*" captionres=\{[^}]*\} ', 'caption="" ', line, count=1)
+    line = set_area(line, (0, 0, COLUMN_X[0][1] - COLUMN_X[0][0], ROW))
+    assert 'style=radiocheck' in line and 'captionres' not in line and 'winflag_visible=yes' in line
+    return ('# SC4DataViewExtensions button template (copy of the Maxis Fire Hazard button)\r\n' + line + '\r\n').encode('latin1')
+
 def add_cell(data, column, row):
     """Appends Data View Button Cell (Uint32 x 2) to a binary exemplar (EQZB1###)."""
     assert data[:8] == b'EQZB1###'
@@ -175,6 +188,7 @@ def main(game, ui_1_0, transient, out_dir):
     ui = next(e for e in game_entries if (e['t'], e['g'], e['i']) == UI_KEY)
     ui_entries = [dict(t=UI_KEY[0], g=UI_KEY[1], i=UI_KEY[2],
                        data=build_ui(ui['data'].decode('latin1'), pages).encode('latin1'))]
+    ui_entries.append(dict(t=UI_KEY[0], g=UI_KEY[1], i=BUTTON_TEMPLATE_UI, data=button_template(ui['data'].decode('latin1'))))
     ui_entries += [e for e in v10 if e['t'] == LTEXT and e['g'] == BUTTON_TEXT_GROUP]
     ui_entries += nav_images(game_entries)
     ui_entries += [dict(t=LTEXT, g=BUTTON_TEXT_GROUP, i=CAPTION_BASE + m, data=ltext(c)) for m, c in sorted(CAPTIONS.items())]

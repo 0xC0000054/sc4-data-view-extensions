@@ -33,6 +33,7 @@
     <ClCompile Include="..\vendor\gzcom-dll\src\cRZBaseUnknown.cpp" />
     <ClCompile Include="..\vendor\gzcom-dll\src\cRZCOMDllDirector.cpp" />
     <ClCompile Include="..\vendor\gzcom-dll\src\cSC4BaseOccupantFilter.cpp" />
+    <ClCompile Include="..\vendor\gzcom-dll\src\StringResourceManager.cpp" />
     <ClCompile Include="cSC4WinMapViewHooks.cpp" />
     <ClCompile Include="DataViewExtensionsDllDirector.cpp" />
     <ClCompile Include="DebugUtil.cpp" />

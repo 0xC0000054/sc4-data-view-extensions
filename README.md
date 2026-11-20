@@ -64,8 +64,13 @@ When the Data Views panel opens, the DLL reads the cell of every data view and p
 
 * The Maxis data views use the Maxis buttons, which keep their IDs (mods that re-purpose them keep working);
   Desirability and Traffic take the cells of the R$ Desirability and Traffic data views and still open their sub views.
-* Every other data view uses the button `0x5200 + view mode`, which must be in `ExtendedDataViewUI.dat`: buttons created
-  at run time do not receive clicks. A click selects the view mode, nothing to add to the DLL.
+* Every other data view uses the button `0x5200 + view mode`. A click selects the view mode, nothing to add to the DLL.
+* A data view with a cell whose button is not in `ExtendedDataViewUI.dat` (for example one added by another plugin)
+  gets its button created at run time from the button template UI `0x00000000 / 0x96A006B0 / 0x5C4DF300` (a copy of the
+  Maxis Fire Hazard button, ID `0x5C4DF301`, in `ExtendedDataViewUI.dat`). The DLL gives it the ID `0x5200 + view mode`,
+  a caption and the map view as notification target, like the buttons of the UI, so its clicks select the view mode.
+  The caption is the LTEXT `0x6A554AFD / 0x5C4DF200 + view mode` when there is one, else the exemplar name without
+  `DataView: `. The log line of the panel counts the buttons created at run time.
 * A cell outside the grid or already taken sends the button to the next free cell. A custom button whose data view has
   no cell is hidden; a Maxis button whose data view has no cell (overridden by a plugin without the property) stays on
   page 1, with a line in `SC4DataViewExtensions.log`. When no data view has the property, the panel is left as the UI
@@ -82,8 +87,9 @@ Both DAT files are built by `tools/make_data_view_ui.py` (cells in `tools/data_v
 
     python tools/make_data_view_ui.py "<SimCity 4>/SimCity_1.dat" "dat/source/ExtendedDataViewUI-1.0.dat" "dat/source/z_DataView - TransientAura.dat" dat
 
-To add a data view: give its exemplar a Data View Button Cell and add the button `0x5200 + view mode` to the UI (a
-line in `tools/data_view_layout.py` does both).
+To add a data view: give its exemplar a Data View Button Cell (and, for its caption, an LTEXT
+`0x6A554AFD / 0x5C4DF200 + view mode`); the DLL creates the button. A line in `tools/data_view_layout.py` also writes the
+button into the UI, as for the data views of this DLL.
 
 # System Requirements
 
