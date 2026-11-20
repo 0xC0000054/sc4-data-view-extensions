@@ -86,6 +86,9 @@
     <ClCompile Include="..\vendor\gzcom-dll\src\cRZBaseString.cpp">
       <Filter>Source Files\GZCOM</Filter>
     </ClCompile>
+    <ClCompile Include="..\vendor\gzcom-dll\src\StringResourceManager.cpp">
+      <Filter>Source Files\GZCOM</Filter>
+    </ClCompile>
     <ClCompile Include="SC4VersionDetection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -128,6 +131,5 @@
   <ItemGroup>
     <None Include=".editorconfig" />
     <None Include="IgnoredWords.dic" />
-    <None Include="vcpkg.json" />
   </ItemGroup>
 </Project>

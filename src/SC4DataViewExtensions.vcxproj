@@ -33,6 +33,7 @@
     <ClCompile Include="..\vendor\gzcom-dll\src\cRZBaseUnknown.cpp" />
     <ClCompile Include="..\vendor\gzcom-dll\src\cRZCOMDllDirector.cpp" />
     <ClCompile Include="..\vendor\gzcom-dll\src\cSC4BaseOccupantFilter.cpp" />
+    <ClCompile Include="..\vendor\gzcom-dll\src\StringResourceManager.cpp" />
     <ClCompile Include="cSC4WinMapViewHooks.cpp" />
     <ClCompile Include="DataViewExtensionsDllDirector.cpp" />
     <ClCompile Include="DebugUtil.cpp" />
@@ -50,7 +51,6 @@
   <ItemGroup>
     <None Include=".editorconfig" />
     <None Include="IgnoredWords.dic" />
-    <None Include="vcpkg.json" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
@@ -86,7 +86,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Label="Vcpkg">
-    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -97,7 +97,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>..\vendor\gzcom-dll\include;.\;.\occupant-highlight-filters</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\vendor\gzcom-dll\include;..\vendor\wil\include;.\;.\occupant-highlight-filters</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
@@ -122,7 +122,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>..\vendor\gzcom-dll\include;.\;.\occupant-highlight-filters</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\vendor\gzcom-dll\include;..\vendor\wil\include;.\;.\occupant-highlight-filters</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <UseFullPaths>false</UseFullPaths>

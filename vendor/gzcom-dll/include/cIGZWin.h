@@ -91,6 +91,8 @@ class cIGZWin : public cIGZUnknown
 		virtual bool SetArea(const cRZRect& rect) = 0;
 
 		virtual bool GZWinMoveTo(int32_t x, int32_t y) = 0;
+		// Moves the window by (dx, dy): the game's slot right after GZWinMoveTo.
+		virtual bool GZWinOffset(int32_t dx, int32_t dy) = 0;
 
 		virtual bool FitRectToWindow(cRZRect& unknown1, int32_t unknown2) = 0;
 		virtual bool ScreenToWindowCoordinates(int32_t& unknown1, int32_t& unknown2) const = 0;
@@ -177,7 +179,12 @@ class cIGZWin : public cIGZUnknown
 		virtual bool AddMessageFilter(cIGZWinMessageFilter* unknown1) = 0;
 		virtual bool RemoveMessageFilter(cIGZWinMessageFilter* unknown1) = 0;
 
-		virtual bool SetSize(cRZPoint const& size) = 0;
+		// MSVC puts every virtual overload of a name at the slot of the first one declared, so a second virtual
+		// SetSize would be pulled up next to SetSize(width, height) and shift SetArea and the following slots by one
+		// (SetArea(l, t, r, b) then called GZWinMoveTo: "the value of ESP was not properly saved"). The game's
+		// SetSize(cRZPoint) slot is here, so the virtual gets its own name.
+		virtual bool SetSizeFromPoint(cRZPoint const& size) = 0;
+		bool SetSize(cRZPoint const& size) { return SetSizeFromPoint(size); }
 		virtual void CenterWindowInRect(cRZRect* rect) = 0;
 		virtual void CenterWindowInRect() = 0;
 

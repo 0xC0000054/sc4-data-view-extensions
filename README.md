@@ -3,12 +3,15 @@
 A DLL Plugin for SimCity 4 that extends the game's data views.
 
 This plugin includes a modified data view UI that adds dedicated radio buttons
-for Moisture, Park Aura and Landmark Aura data views.
-The modified UI is otherwise identical to the standard Maxis UI, so it will work with
-existing mods that re-purpose the Maxis data view radio buttons.
+for Moisture, Park Aura, Landmark Aura and Transient Aura data views.
+It also gives a button to the four zone desirability views of the game, which had none (Crime and Flammability,
+duplicates of the Crime and Fire Hazard views, get none; the per-wealth desirability and traffic volume views stay in the Desirability and Traffic sub views).
+Each button is placed by the Data View Button Cell of its data view, the Data Views panel keeps the size and position of
+the Maxis panel and its buttons are split in pages (see [Data View Button Cell](#data-view-button-cell)). The Maxis
+buttons keep their IDs and cells, so the UI will work with existing mods that re-purpose the Maxis data view radio
+buttons.
 
-The DLL also supports a Transient Aura data view, this data view is provided as an
-optional DAT file that replaces the Garbage Pollution data view.
+The Transient Aura data view has its own button (page 2) and no longer replaces the Garbage Pollution data view.
 
 ## Differences from Cori's Park Aura Mod
 
@@ -49,6 +52,49 @@ to the numeric value of the game's "DataView: Highlight mode" property (0x4A0B47
 | Park | 10 | Buildings that have a Park Effect exemplar property are highlighted. |
 | Landmark | 11 | Buildings that have a Landmark Effect exemplar property are highlighted. |
 
+## Data View Button Cell
+
+`dat/DataViews.dat` holds every data view of the game (the 47 exemplars of `SimCity_1.dat`, type `0x6534284A`,
+group `0x690F693F`, with a *DataView: Data source*) and the ones of this DLL (Moisture, Park Aura, Landmark Aura,
+Transient Aura). The data views that get a button carry the property **Data View Button Cell** (`0x5C4DF150`, Uint32 x 2:
+column 0-3, row 0-63), similar to SC4SIM's Graph Button Cell. The view mode of a data view is its instance minus
+`0x4A0B6800`.
+
+When the Data Views panel opens, the DLL reads the cell of every data view and places its button there:
+
+* The Maxis data views use the Maxis buttons, which keep their IDs (mods that re-purpose them keep working);
+  Desirability and Traffic take the cells of the R$ Desirability and Traffic data views and still open their sub views.
+* Every other data view uses the button `0x5200 + view mode`. A click selects the view mode, nothing to add to the DLL.
+* A data view with a cell whose button is not in `ExtendedDataViewUI.dat` (for example one added by another plugin)
+  gets its button created at run time from the button template UI `0x00000000 / 0x96A006B0 / 0x5C4DF300` (a copy of the
+  Maxis Fire Hazard button, ID `0x5C4DF301`, in `ExtendedDataViewUI.dat`). The DLL gives it the ID `0x5200 + view mode`,
+  a caption and the map view as notification target, like the buttons of the UI, so its clicks select the view mode.
+  The caption is the LTEXT `0x6A554AFD / 0x5C4DF200 + view mode` when there is one, else the exemplar name without
+  `DataView: `. The log line of the panel counts the buttons created at run time.
+* A cell outside the grid or already taken sends the button to the next free cell. A custom button whose data view has
+  no cell is hidden; a Maxis button whose data view has no cell (overridden by a plugin without the property) stays on
+  page 1, with a line in `SC4DataViewExtensions.log`. When no data view has the property, the panel is left as the UI
+  builds it.
+
+The panel keeps the size and position of the Maxis panel. Row 0 of the button grid (window `0x8A2871D6`) holds All Off
+and the page controls `< Previous`, page number, `Next >` (`0x5C4DF1F0`, `0x5C4DF1F2`, `0x5C4DF1F1`) on every page;
+cell row r is grid row r % 4 + 1 of page r / 4 + 1. Page 1 is the Maxis layout; page 2 holds Moisture, the four zone desirability
+data views (data views of the game without a button), Park Aura, Landmark Aura and Transient Aura. The game's Crime
+(`0x04`) and Flammability (`0x06`) data views get no button: they read the same grids as the Crime and Fire Hazard
+buttons, with no legend, and Flammability's colour ramp is fully transparent. The four zone desirability data views, which have no
+legend in the game, get the legend of the Maxis desirability sub views (same colour ramp, "Low Desirability" to "High
+Desirability") with their own header: *Residential (All Wealth)*, *Commercial Service (All Wealth)*, *Commercial Office
+(All Wealth)*, *Industrial (All Types)* (LTEXT `0x6A231EAA / 0x5C4DF160`-`0x5C4DF163`, in `DataViews.dat`). The page controls are shown only when there is more than one page.
+
+Both DAT files are built by `tools/make_data_view_ui.py` (cells in `tools/data_view_layout.py`) from the game's
+`SimCity_1.dat` and the 1.0 DAT files in `dat/source`:
+
+    python tools/make_data_view_ui.py "<SimCity 4>/SimCity_1.dat" "dat/source/ExtendedDataViewUI-1.0.dat" "dat/source/z_DataView - TransientAura.dat" dat
+
+To add a data view: give its exemplar a Data View Button Cell (and, for its caption, an LTEXT
+`0x6A554AFD / 0x5C4DF200 + view mode`); the DLL creates the button. A line in `tools/data_view_layout.py` also writes the
+button into the UI, as for the data views of this DLL.
+
 # System Requirements
 
 * SimCity 4 version 641
@@ -59,8 +105,8 @@ The plugin may work on Windows 7 or later, but I do not have the ability to test
 # Installation
 
 1. Close SimCity 4.
-2. Copy `SC4DataViewExtensions.dll` and `ExtendedDataViewUI.dat` into the top-level of the Plugins folder in the SimCity 4 installation directory or Documents/SimCity 4 directory.
-3. Optionally copy `z_DataView - TransientAura.dat` into the Plugins folder in the SimCity 4 installation directory or Documents/SimCity 4 directory.
+2. Copy `SC4DataViewExtensions.dll`, `dat/ExtendedDataViewUI.dat` and `dat/DataViews.dat` into the top-level of the Plugins folder in the SimCity 4 installation directory or Documents/SimCity 4 directory.
+3. Remove `z_DataView - TransientAura.dat` if it is installed: the Transient Aura data view is now in `DataViews.dat`, and the old file would still replace the Garbage Pollution data view.
 4. Start SimCity 4.
 
 # Troubleshooting
@@ -76,7 +122,7 @@ See [LICENSE.txt](LICENSE.txt) for more information.
 ## 3rd party code
 
 [gzcom-dll](https://github.com/nsgomez/gzcom-dll/tree/master) Located in the vendor folder, MIT License.    
-[Windows Implementation Library](https://github.com/microsoft/wil) - MIT License    
+[Windows Implementation Library](https://github.com/microsoft/wil) Headers located in the vendor/wil folder (no vcpkg needed), MIT License.    
 [SC4Fix](https://github.com/nsgomez/sc4fix) - MIT License    
 
 ## Mod Credits
